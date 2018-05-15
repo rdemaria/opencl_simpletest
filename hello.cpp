@@ -30,72 +30,29 @@ static const char source[] =
     "}\n";
 
 
-int main(int argc, char *argv[]) {
-    if (argc !=2){
-      std::cerr << "wrong number of arguments" << std::endl;
-      return 1;
-    };
-
-    int ndev = std::stoi( argv[1] );
-    size_t N = 1 << 20;
-
-    try {
-        // Get list of OpenCL platforms.
-        std::vector<cl::Platform> platform;
-        cl::Platform::get(&platform);
-
-        if (platform.empty()) {
-            std::cerr << "OpenCL platforms not found." << std::endl;
-            return 1;
-        }
-
-        // Get first available GPU device which supports double precision.
-        cl::Context context;
-        std::vector<cl::Device> device;
-        for(auto p = platform.begin(); device.empty() && p != platform.end(); p++) {
-            std::vector<cl::Device> pldev;
-            p->getDevices(CL_DEVICE_TYPE_ALL, &pldev);
-
-            for(auto d = pldev.begin(); d != pldev.end(); d++) {
-                if (!d->getInfo<CL_DEVICE_AVAILABLE>()) continue;
-                device.push_back(*d);
-            }
-        }
-
-        if (device.empty()) {
-            std::cerr << "GPUs with double precision not found." << std::endl;
-            return 1;
-        }
-
-        for(int jj=0; jj<device.size(); jj++){
-           std::cout << "Device list" << std::endl;
-           std::cout << jj<<":"<<device[jj].getInfo<CL_DEVICE_NAME>() << std::endl;
-           //mk_test(device);
-        };
-
-        // Create context
-        context = cl::Context(device[ndev]);
-        std::cout << "Using " << ndev << ": " << device[ndev].getInfo<CL_DEVICE_NAME>() << std::endl;
+int mk_test(std::vector<cl::Device> devices, int ndev,  cl::Context context) {
+        //std::cout << "Using " << devices[ndev].getInfo<CL_DEVICE_NAME>() << std::endl;
 
         // Create command queue.
-        cl::CommandQueue queue(context, device[ndev]);
+        cl::CommandQueue queue(context, devices[ndev]);
 
-        // Compile OpenCL program for found device.
+        // Compile OpenCL program for found devices.
         cl::Program program(context, cl::Program::Sources(
                     1, std::make_pair(source, strlen(source))
                     ));
 
         try {
-            program.build(device);
+            program.build(devices);
         } catch (const cl::Error&) {
             std::cerr
                 << "OpenCL compilation error" << std::endl
-                << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device[ndev])
+                << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(devices[ndev])
                 << std::endl;
             return 1;
         }
 
         cl::Kernel add(program, "add");
+        size_t N = 1 << 20;
 
         // Prepare input data.
         std::vector<double> a(N, 0);
@@ -136,6 +93,53 @@ int main(int argc, char *argv[]) {
           err+=SQ(a[jj]+b[jj]-c[jj]);
         };
         std::cout << "Difference C - OpenCL = " << err << std::endl;
+
+};
+
+int main(int argc, char *argv[]) {
+    const size_t N = 1 << 20;
+
+    try {
+        // Get list of OpenCL platforms.
+        std::vector<cl::Platform> platform;
+        cl::Platform::get(&platform);
+
+        if (platform.empty()) {
+            std::cerr << "OpenCL platforms not found." << std::endl;
+            return 1;
+        }
+
+        // Get all available devices.
+        std::vector<cl::Device> devices;
+        for(auto p = platform.begin(); devices.empty() && p != platform.end(); p++) {
+            std::vector<cl::Device> pldev;
+            try {
+                p->getDevices(CL_DEVICE_TYPE_ALL, &pldev);
+                for(auto d = pldev.begin(); d != pldev.end(); d++) {
+                    if (!d->getInfo<CL_DEVICE_AVAILABLE>()) continue;
+                    devices.push_back(*d);
+                }
+            } catch(...) {
+                devices.clear();
+            }
+        }
+
+        if (devices.empty()) {
+            std::cerr << "GPUs with double precision not found." << std::endl;
+            return 1;
+        }
+
+        // Create context
+        cl::Context context;
+        context = cl::Context(devices);
+
+        std::cout << "Device list" << std::endl;
+        for(int jj=0; jj<devices.size(); jj++){
+           std::cout << jj<<":"<<devices[jj].getInfo<CL_DEVICE_NAME>() << std::endl;
+           mk_test(devices,jj,context);
+        };
+	return 0;
+
     } catch (const cl::Error &err) {
         std::cerr
             << "OpenCL error: "
