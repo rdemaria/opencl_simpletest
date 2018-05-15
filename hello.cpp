@@ -29,8 +29,15 @@ static const char source[] =
     "    }\n"
     "}\n";
 
-int main() {
-    const size_t N = 1 << 20;
+
+int main(int argc, char *argv[]) {
+    if (argc !=2){
+      std::cerr << "wrong number of arguments" << std::endl;
+      return 1;
+    };
+
+    int ndev = std::stoi( argv[1] );
+    size_t N = 1 << 20;
 
     try {
         // Get list of OpenCL platforms.
@@ -47,25 +54,11 @@ int main() {
         std::vector<cl::Device> device;
         for(auto p = platform.begin(); device.empty() && p != platform.end(); p++) {
             std::vector<cl::Device> pldev;
+            p->getDevices(CL_DEVICE_TYPE_ALL, &pldev);
 
-            try {
-                p->getDevices(CL_DEVICE_TYPE_ALL, &pldev);
-
-                for(auto d = pldev.begin(); device.empty() && d != pldev.end(); d++) {
-                    if (!d->getInfo<CL_DEVICE_AVAILABLE>()) continue;
-
-                    std::string ext = d->getInfo<CL_DEVICE_EXTENSIONS>();
-
-                    if (
-                            ext.find("cl_khr_fp64") == std::string::npos &&
-                            ext.find("cl_amd_fp64") == std::string::npos
-                       ) continue;
-
-                    device.push_back(*d);
-                    context = cl::Context(device);
-                }
-            } catch(...) {
-                device.clear();
+            for(auto d = pldev.begin(); d != pldev.end(); d++) {
+                if (!d->getInfo<CL_DEVICE_AVAILABLE>()) continue;
+                device.push_back(*d);
             }
         }
 
@@ -74,10 +67,18 @@ int main() {
             return 1;
         }
 
-        std::cout << device[0].getInfo<CL_DEVICE_NAME>() << std::endl;
+        for(int jj=0; jj<device.size(); jj++){
+           std::cout << "Device list" << std::endl;
+           std::cout << jj<<":"<<device[jj].getInfo<CL_DEVICE_NAME>() << std::endl;
+           //mk_test(device);
+        };
+
+        // Create context
+        context = cl::Context(device[ndev]);
+        std::cout << "Using " << ndev << ": " << device[ndev].getInfo<CL_DEVICE_NAME>() << std::endl;
 
         // Create command queue.
-        cl::CommandQueue queue(context, device[0]);
+        cl::CommandQueue queue(context, device[ndev]);
 
         // Compile OpenCL program for found device.
         cl::Program program(context, cl::Program::Sources(
@@ -89,7 +90,7 @@ int main() {
         } catch (const cl::Error&) {
             std::cerr
                 << "OpenCL compilation error" << std::endl
-                << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device[0])
+                << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device[ndev])
                 << std::endl;
             return 1;
         }
@@ -134,7 +135,7 @@ int main() {
         for (int jj=0; jj<N; jj++){
           err+=SQ(a[jj]+b[jj]-c[jj]);
         };
-        std::cout << err << std::endl;
+        std::cout << "Difference C - OpenCL = " << err << std::endl;
     } catch (const cl::Error &err) {
         std::cerr
             << "OpenCL error: "
